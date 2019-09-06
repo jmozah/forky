@@ -1,3 +1,19 @@
+// Copyright 2019 The Swarm Authors
+// This file is part of the Swarm library.
+//
+// The Swarm library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The Swarm library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the Swarm library. If not, see <http://www.gnu.org/licenses/>.
+
 package forky
 
 import (
@@ -13,21 +29,22 @@ import (
 	"github.com/ethersphere/swarm/chunk"
 )
 
-var _ store = new(DB)
-
-var ErrDBClosed = errors.New("closed database")
-
-type store interface {
+type Interface interface {
 	Get(addr chunk.Address) (ch chunk.Chunk, err error)
+	Has(addr chunk.Address) (yes bool, err error)
 	Put(ch chunk.Chunk) (err error)
 	Delete(addr chunk.Address) (err error)
 	Close() (err error)
 }
 
-const shardCount = 8
+const ShardCount = 32
 
-type DB struct {
-	chunks   map[uint8]*os.File
+var ErrDBClosed = errors.New("closed database")
+
+var _ Interface = new(Store)
+
+type Store struct {
+	shards   map[uint8]*os.File
 	shardsMu map[uint8]*sync.Mutex
 	meta     MetaStore
 	free     map[uint8]struct{}
@@ -37,18 +54,18 @@ type DB struct {
 	quitOnce sync.Once
 }
 
-func NewDB(path string, metaStore MetaStore) (db *DB, err error) {
-	chunks := make(map[byte]*os.File, shardCount)
+func NewStore(path string, metaStore MetaStore) (s *Store, err error) {
+	shards := make(map[byte]*os.File, ShardCount)
 	shardsMu := make(map[uint8]*sync.Mutex)
-	for i := byte(0); i <= shardCount-1; i++ {
-		chunks[i], err = os.OpenFile(filepath.Join(path, fmt.Sprintf("chunk%v.db", i)), os.O_CREATE|os.O_RDWR, 0666)
+	for i := byte(0); i < ShardCount; i++ {
+		shards[i], err = os.OpenFile(filepath.Join(path, fmt.Sprintf("chunks-%v.db", i)), os.O_CREATE|os.O_RDWR, 0666)
 		if err != nil {
 			return nil, err
 		}
 		shardsMu[i] = new(sync.Mutex)
 	}
-	return &DB{
-		chunks:   chunks,
+	return &Store{
+		shards:   shards,
 		shardsMu: shardsMu,
 		meta:     metaStore,
 		free:     make(map[uint8]struct{}),
@@ -56,59 +73,67 @@ func NewDB(path string, metaStore MetaStore) (db *DB, err error) {
 	}, nil
 }
 
-func (db *DB) protect() (done func(), err error) {
-	select {
-	case <-db.quit:
-		return nil, ErrDBClosed
-	default:
-	}
-	db.wg.Add(1)
-	return db.wg.Done, nil
-}
-
-func (db *DB) Get(addr chunk.Address) (ch chunk.Chunk, err error) {
-	done, err := db.protect()
+func (s *Store) Get(addr chunk.Address) (ch chunk.Chunk, err error) {
+	done, err := s.protect()
 	if err != nil {
 		return nil, err
 	}
 	defer done()
 
-	m, err := db.meta.Get(addr)
+	mu := s.shardsMu[getShard(addr)]
+	mu.Lock()
+	defer mu.Unlock()
+
+	m, err := s.meta.Get(addr)
 	if err != nil {
 		return nil, err
 	}
 	data := make([]byte, m.Size)
-	_, err = db.chunks[db.shard(addr)].ReadAt(data, m.Offset)
+	_, err = s.shards[getShard(addr)].ReadAt(data, m.Offset)
 	if err != nil {
 		return nil, err
 	}
 	return chunk.NewChunk(addr, data), nil
 }
 
-func (db *DB) Put(ch chunk.Chunk) (err error) {
-	done, err := db.protect()
+func (s *Store) Has(addr chunk.Address) (yes bool, err error) {
+	done, err := s.protect()
+	if err != nil {
+		return false, err
+	}
+	defer done()
+
+	mu := s.shardsMu[getShard(addr)]
+	mu.Lock()
+	defer mu.Unlock()
+
+	return s.meta.Has(addr)
+}
+
+func (s *Store) Put(ch chunk.Chunk) (err error) {
+	done, err := s.protect()
 	if err != nil {
 		return err
 	}
 	defer done()
 
 	addr := ch.Address()
-	shard := db.shard(addr)
-	f := db.chunks[shard]
+	shard := getShard(addr)
+	f := s.shards[shard]
 	data := ch.Data()
 	section := make([]byte, chunk.DefaultSize)
 	copy(section, data)
 
-	db.freeMu.RLock()
-	_, hasFree := db.free[shard]
-	db.freeMu.RUnlock()
+	s.freeMu.RLock()
+	_, hasFree := s.free[shard]
+	s.freeMu.RUnlock()
 
 	var offset int64
-	var redeemed bool
-	mu := db.shardsMu[shard]
+	var reclaimed bool
+	mu := s.shardsMu[shard]
 	mu.Lock()
 	if hasFree {
-		freeOffset, err := db.meta.Free(shard)
+		freeOffset, err := s.meta.Free(shard)
 		if err != nil {
 			return err
 		}
@@ -118,16 +143,16 @@ func (db *DB) Put(ch chunk.Chunk) (err error) {
 				mu.Unlock()
 				return err
 			}
-			db.freeMu.Lock()
-			delete(db.free, shard)
-			db.freeMu.Unlock()
+			s.freeMu.Lock()
+			delete(s.free, shard)
+			s.freeMu.Unlock()
 		} else {
 			offset, err = f.Seek(freeOffset, io.SeekStart)
 			if err != nil {
 				mu.Unlock()
 				return err
 			}
-			redeemed = true
+			reclaimed = true
 		}
 	} else {
 		offset, err = f.Seek(0, io.SeekEnd)
@@ -141,56 +166,77 @@ func (db *DB) Put(ch chunk.Chunk) (err error) {
 		mu.Unlock()
 		return err
 	}
-	if redeemed {
+	if reclaimed {
 		defer mu.Unlock()
 	} else {
 		mu.Unlock()
 	}
 
-	return db.meta.Put(addr, shard, redeemed, &Meta{
+	return s.meta.Put(addr, shard, reclaimed, &Meta{
 		Size:   uint16(len(data)),
 		Offset: int64(offset),
 	})
 }
 
-func (db *DB) Delete(addr chunk.Address) (err error) {
-	done, err := db.protect()
+func (s *Store) Delete(addr chunk.Address) (err error) {
+	done, err := s.protect()
 	if err != nil {
 		return err
 	}
 	defer done()
 
-	shard := db.shard(addr)
-	db.freeMu.Lock()
-	db.free[shard] = struct{}{}
-	db.freeMu.Unlock()
-	return db.meta.Delete(addr, shard)
+	shard := getShard(addr)
+	s.freeMu.Lock()
+	s.free[shard] = struct{}{}
+	s.freeMu.Unlock()
+	mu := s.shardsMu[shard]
+	mu.Lock()
+	defer mu.Unlock()
+	return s.meta.Delete(addr, shard)
 }
 
-func (db *DB) Close() (err error) {
-	db.quitOnce.Do(func() {
-		close(db.quit)
+func (s *Store) Close() (err error) {
+	s.quitOnce.Do(func() {
+		close(s.quit)
 	})
 	done := make(chan struct{})
 	go func() {
-		db.wg.Done()
+		s.wg.Wait()
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(15 * time.Second):
 	}
-	for _, f := range db.chunks {
+	for _, f := range s.shards {
 		if err := f.Close(); err != nil {
 			return err
 		}
 	}
-	return db.meta.Close()
+	return s.meta.Close()
 }
 
-func (db *DB) shard(addr chunk.Address) (shard uint8) {
-	shard = addr[len(addr)-1] % shardCount
-	return shard
+func (s *Store) protect() (done func(), err error) {
+	select {
+	case <-s.quit:
+		return nil, ErrDBClosed
+	default:
+	}
+	s.wg.Add(1)
+	return s.wg.Done, nil
+}
+
+func getShard(addr chunk.Address) (shard uint8) {
+	return addr[len(addr)-1] % ShardCount
+}
+
+type MetaStore interface {
+	Get(addr chunk.Address) (*Meta, error)
+	Has(addr chunk.Address) (bool, error)
+	Put(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
+	Delete(addr chunk.Address, shard uint8) error
+	Free(shard uint8) (int64, error)
+	Close() error
 }
 
 type Meta struct {
@@ -211,10 +257,9 @@ func (m *Meta) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-type MetaStore interface {
-	Put(addr chunk.Address, shard uint8, redeemed bool, m *Meta) error
-	Get(addr chunk.Address) (*Meta, error)
-	Delete(addr chunk.Address, shard uint8) error
-	Free(shard uint8) (int64, error)
-	Close() error
+func (m *Meta) String() (s string) {
+	if m == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{Size: %v, Offset %v}", m.Size, m.Offset)
 }
