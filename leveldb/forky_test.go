@@ -32,27 +32,7 @@ func TestLevelDBForky(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		metaStore, err := leveldb.NewMetaStore(
-			path,
-			forky.NewMetaCache(),
-			forky.NewOffsetCache(forky.ShardCount),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		return test.NewForkyStore(t, path, metaStore)
-	})
-}
-
-func TestLevelDBForkyNoCache(t *testing.T) {
-	test.StoreSuite(t, []int{1000, 10000, 100000, 1000000}, func(t *testing.T) (forky.Interface, func()) {
-		path, err := ioutil.TempDir("", "swarm-forky-")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		metaStore, err := leveldb.NewMetaStore(path, nil, nil)
+		metaStore, err := leveldb.NewMetaStore(path)
 		if err != nil {
 			t.Fatal(err)
 		}

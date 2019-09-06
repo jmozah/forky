@@ -22,36 +22,29 @@ import (
 	"github.com/ethersphere/swarm/chunk"
 )
 
-type MetaCache struct {
+type metaCache struct {
 	m  metaTree
 	mu sync.RWMutex
 }
 
-func NewMetaCache() (c *MetaCache) {
-	return new(MetaCache)
+func newMetaCache() (c *metaCache) {
+	return new(metaCache)
 }
 
-func (c *MetaCache) Get(addr chunk.Address) (m *Meta) {
+func (c *metaCache) get(addr chunk.Address) (m *Meta) {
 	c.mu.RLock()
 	m = c.m.get(addr)
 	c.mu.RUnlock()
 	return m
 }
 
-func (c *MetaCache) Has(addr chunk.Address) (yes bool) {
-	c.mu.RLock()
-	m := c.m.get(addr)
-	c.mu.RUnlock()
-	return m != nil
-}
-
-func (c *MetaCache) Set(addr chunk.Address, m *Meta) {
+func (c *metaCache) set(addr chunk.Address, m *Meta) {
 	c.mu.Lock()
 	c.m.set(addr, m)
 	c.mu.Unlock()
 }
 
-func (c *MetaCache) Delete(addr chunk.Address) {
+func (c *metaCache) delete(addr chunk.Address) {
 	c.mu.Lock()
 	c.m.delete(addr)
 	c.mu.Unlock()

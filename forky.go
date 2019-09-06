@@ -37,39 +37,51 @@ type Interface interface {
 	Close() (err error)
 }
 
-const ShardCount = 32
+const shardCount = 32
 
 var ErrDBClosed = errors.New("closed database")
 
 var _ Interface = new(Store)
 
 type Store struct {
-	shards   map[uint8]*os.File
-	shardsMu map[uint8]*sync.Mutex
-	meta     MetaStore
-	free     map[uint8]struct{}
-	freeMu   sync.RWMutex
-	wg       sync.WaitGroup
-	quit     chan struct{}
-	quitOnce sync.Once
+	shards    map[uint8]*os.File
+	shardsMu  map[uint8]*sync.Mutex
+	meta      MetaStore
+	free      map[uint8]struct{}
+	freeMu    sync.RWMutex
+	metaCache *metaCache
+	freeCache *offsetCache
+	wg        sync.WaitGroup
+	quit      chan struct{}
+	quitOnce  sync.Once
 }
 
-func NewStore(path string, metaStore MetaStore) (s *Store, err error) {
-	shards := make(map[byte]*os.File, ShardCount)
+func NewStore(path string, metaStore MetaStore, noCache bool) (s *Store, err error) {
+	shards := make(map[byte]*os.File, shardCount)
 	shardsMu := make(map[uint8]*sync.Mutex)
-	for i := byte(0); i < ShardCount; i++ {
+	for i := byte(0); i < shardCount; i++ {
 		shards[i], err = os.OpenFile(filepath.Join(path, fmt.Sprintf("chunks-%v.db", i)), os.O_CREATE|os.O_RDWR, 0666)
 		if err != nil {
 			return nil, err
 		}
 		shardsMu[i] = new(sync.Mutex)
 	}
+	var (
+		metaCache *metaCache
+		freeCache *offsetCache
+	)
+	if !noCache {
+		metaCache = newMetaCache()
+		freeCache = newOffsetCache(shardCount)
+	}
 	return &Store{
-		shards:   shards,
-		shardsMu: shardsMu,
-		meta:     metaStore,
-		free:     make(map[uint8]struct{}),
-		quit:     make(chan struct{}),
+		shards:    shards,
+		shardsMu:  shardsMu,
+		meta:      metaStore,
+		metaCache: metaCache,
+		freeCache: freeCache,
+		free:      make(map[uint8]struct{}),
+		quit:      make(chan struct{}),
 	}, nil
 }
 
@@ -84,7 +96,7 @@ func (s *Store) Get(addr chunk.Address) (ch chunk.Chunk, err error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	m, err := s.meta.Get(addr)
+	m, err := s.getMeta(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +119,20 @@ func (s *Store) Has(addr chunk.Address) (yes bool, err error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	return s.meta.Has(addr)
+	m, err := s.getMeta(addr)
+	if err != nil {
+		if err == chunk.ErrChunkNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	if m == nil {
+		return false, nil
+	}
+	if s.metaCache != nil {
+		s.metaCache.set(addr, m)
+	}
+	return true, nil
 }
 
 func (s *Store) Put(ch chunk.Chunk) (err error) {
@@ -133,9 +158,15 @@ func (s *Store) Put(ch chunk.Chunk) (err error) {
 	mu := s.shardsMu[shard]
 	mu.Lock()
 	if hasFree {
-		freeOffset, err := s.meta.Free(shard)
-		if err != nil {
-			return err
+		var freeOffset int64 = -1
+		if s.freeCache != nil {
+			freeOffset = s.freeCache.get(shard)
+		}
+		if freeOffset < 0 {
+			freeOffset, err = s.meta.Free(shard)
+			if err != nil {
+				return err
+			}
 		}
 		if freeOffset < 0 {
 			offset, err = f.Seek(0, io.SeekEnd)
@@ -167,15 +198,21 @@ func (s *Store) Put(ch chunk.Chunk) (err error) {
 		return err
 	}
 	if reclaimed {
+		if s.freeCache != nil {
+			s.freeCache.delete(shard, offset)
+		}
 		defer mu.Unlock()
 	} else {
 		mu.Unlock()
 	}
-
-	return s.meta.Put(addr, shard, reclaimed, &Meta{
+	m := &Meta{
 		Size:   uint16(len(data)),
-		Offset: int64(offset),
-	})
+		Offset: offset,
+	}
+	if s.metaCache != nil {
+		s.metaCache.set(addr, m)
+	}
+	return s.meta.Set(addr, shard, reclaimed, m)
 }
 
 func (s *Store) Delete(addr chunk.Address) (err error) {
@@ -189,9 +226,21 @@ func (s *Store) Delete(addr chunk.Address) (err error) {
 	s.freeMu.Lock()
 	s.free[shard] = struct{}{}
 	s.freeMu.Unlock()
+
 	mu := s.shardsMu[shard]
 	mu.Lock()
 	defer mu.Unlock()
+
+	if s.freeCache != nil {
+		m, err := s.getMeta(addr)
+		if err != nil {
+			return err
+		}
+		s.freeCache.set(shard, m.Offset)
+	}
+	if s.metaCache != nil {
+		s.metaCache.delete(addr)
+	}
 	return s.meta.Delete(addr, shard)
 }
 
@@ -199,6 +248,7 @@ func (s *Store) Close() (err error) {
 	s.quitOnce.Do(func() {
 		close(s.quit)
 	})
+
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -208,6 +258,7 @@ func (s *Store) Close() (err error) {
 	case <-done:
 	case <-time.After(15 * time.Second):
 	}
+
 	for _, f := range s.shards {
 		if err := f.Close(); err != nil {
 			return err
@@ -226,14 +277,30 @@ func (s *Store) protect() (done func(), err error) {
 	return s.wg.Done, nil
 }
 
+func (s *Store) getMeta(addr chunk.Address) (m *Meta, err error) {
+	if s.metaCache != nil {
+		m = s.metaCache.get(addr)
+		if m != nil {
+			return m, nil
+		}
+	}
+	m, err = s.meta.Get(addr)
+	if err != nil {
+		return nil, err
+	}
+	if s.metaCache != nil {
+		s.metaCache.set(addr, m)
+	}
+	return m, nil
+}
+
 func getShard(addr chunk.Address) (shard uint8) {
-	return addr[len(addr)-1] % ShardCount
+	return addr[len(addr)-1] % shardCount
 }
 
 type MetaStore interface {
 	Get(addr chunk.Address) (*Meta, error)
-	Has(addr chunk.Address) (bool, error)
-	Put(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
+	Set(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
 	Delete(addr chunk.Address, shard uint8) error
 	Free(shard uint8) (int64, error)
 	Close() error

@@ -66,7 +66,7 @@ func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
 	return m, nil
 }
 
-func (s *MetaStore) Put(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
+func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
 	meta, err := m.MarshalBinary()
 	if err != nil {
 		return err

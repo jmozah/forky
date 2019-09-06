@@ -18,6 +18,7 @@ package test
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -98,8 +99,6 @@ type TestStoreOptions struct {
 	Cleaned      bool
 	NewStoreFunc func(t *testing.T) (forky.Interface, func())
 }
-
-const defaultConcurrency = 8
 
 func TestStore(t *testing.T, o *TestStoreOptions) {
 	db, clean := o.NewStoreFunc(t)
@@ -206,17 +205,17 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 
 				if _, ok := deletedChunks.Load(string(ch.Address())); ok {
 					if err != chunk.ErrChunkNotFound {
-						t.Errorf("got error %v, want %v", err, chunk.ErrChunkNotFound)
+						panic(fmt.Errorf("got error %v, want %v", err, chunk.ErrChunkNotFound))
 					}
 				} else {
 					if err != nil {
-						t.Fatalf("chunk %v %s: %v", i, ch.Address().Hex(), err)
+						panic(fmt.Errorf("chunk %v %s: %v", i, ch.Address().Hex(), err))
 					}
 					if !bytes.Equal(got.Address(), ch.Address()) {
-						t.Fatalf("got chunk %v address %x, want %x", i, got.Address(), ch.Address())
+						panic(fmt.Errorf("got chunk %v address %x, want %x", i, got.Address(), ch.Address()))
 					}
 					if !bytes.Equal(got.Data(), ch.Data()) {
-						t.Fatalf("got chunk %v data %x, want %x", i, got.Data(), ch.Data())
+						panic(fmt.Errorf("got chunk %v data %x, want %x", i, got.Data(), ch.Data()))
 					}
 				}
 			}(i, ch)
@@ -237,7 +236,7 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 
 // 	chunks := make([]chunk.Chunk, totalChunks)
 // 	for i := 0; i < totalChunks; i++ {
-// 		ch := generateTestRandomChunk()
+// 		ch := GenerateTestRandomChunk()
 
 // 		chunks[i] = ch
 // 	}
@@ -294,7 +293,7 @@ func NewForkyStore(t *testing.T, path string, metaStore forky.MetaStore) (s *for
 		t.Fatal(err)
 	}
 
-	s, err = forky.NewStore(path, metaStore)
+	s, err = forky.NewStore(path, metaStore, *noCacheFlag)
 	if err != nil {
 		os.RemoveAll(path)
 		t.Fatal(err)
@@ -312,13 +311,13 @@ func getChunks(count int) []chunk.Chunk {
 	if l == 0 {
 		chunkCache = make([]chunk.Chunk, count)
 		for i := 0; i < count; i++ {
-			chunkCache[i] = generateTestRandomChunk()
+			chunkCache[i] = GenerateTestRandomChunk()
 		}
 		return chunkCache
 	}
 	if l < count {
 		for i := 0; i < count-l; i++ {
-			chunkCache = append(chunkCache, generateTestRandomChunk())
+			chunkCache = append(chunkCache, GenerateTestRandomChunk())
 		}
 		return chunkCache
 	}
@@ -329,7 +328,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func generateTestRandomChunk() chunk.Chunk {
+func GenerateTestRandomChunk() chunk.Chunk {
 	data := make([]byte, chunk.DefaultSize)
 	rand.Read(data)
 	key := make([]byte, 32)

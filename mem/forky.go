@@ -17,6 +17,8 @@
 package mem
 
 import (
+	"sync"
+
 	"github.com/ethersphere/swarm/chunk"
 	"github.com/janos/forky"
 )
@@ -24,49 +26,63 @@ import (
 var _ forky.MetaStore = new(MetaStore)
 
 type MetaStore struct {
-	metaCache *forky.MetaCache
-	freeCache *forky.OffsetCache
+	meta map[string]*forky.Meta
+	free map[uint8]map[int64]struct{}
+	mu   sync.RWMutex
 }
 
-func NewMetaStore(shardCount uint8) (s *MetaStore) {
+func NewMetaStore() (s *MetaStore) {
+	free := make(map[uint8]map[int64]struct{})
+	for shard := uint8(0); shard < 255; shard++ {
+		free[shard] = make(map[int64]struct{})
+	}
 	return &MetaStore{
-		metaCache: forky.NewMetaCache(),
-		freeCache: forky.NewOffsetCache(shardCount),
+		meta: make(map[string]*forky.Meta),
+		free: free,
 	}
 }
 
 func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
-	m = s.metaCache.Get(addr)
+	s.mu.RLock()
+	m = s.meta[string(addr)]
+	s.mu.RUnlock()
 	if m == nil {
 		return nil, chunk.ErrChunkNotFound
 	}
 	return m, nil
 }
 
-func (s *MetaStore) Has(addr chunk.Address) (yes bool, err error) {
-	return s.metaCache.Get(addr) != nil, nil
-}
-
-func (s *MetaStore) Put(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
-	s.metaCache.Set(addr, m)
+func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
+	s.mu.Lock()
 	if reclaimed {
-		s.freeCache.Delete(shard, m.Offset)
+		delete(s.free[shard], m.Offset)
 	}
+	s.meta[string(addr)] = m
+	s.mu.Unlock()
 	return nil
 }
 
 func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
-	m := s.metaCache.Get(addr)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := string(addr)
+	m := s.meta[key]
 	if m == nil {
 		return chunk.ErrChunkNotFound
 	}
-	s.metaCache.Delete(addr)
-	s.freeCache.Set(shard, m.Offset)
+	s.free[shard][m.Offset] = struct{}{}
+	delete(s.meta, key)
 	return nil
 }
 
 func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
-	return s.freeCache.Get(shard), nil
+	s.mu.RLock()
+	for o := range s.free[shard] {
+		s.mu.RUnlock()
+		return o, nil
+	}
+	s.mu.RUnlock()
+	return -1, nil
 }
 
 func (s *MetaStore) Close() (err error) {

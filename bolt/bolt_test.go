@@ -65,7 +65,7 @@ func TestBoltDBPut(t *testing.T) {
 
 			chunks := make([]chunk.Chunk, count)
 			for i := 0; i < count; i++ {
-				ch := generateTestRandomChunk()
+				ch := test.GenerateTestRandomChunk()
 
 				if err := db.Update(func(tx *bolt.Tx) (err error) {
 					return tx.Bucket(bucketNameChunkMeta).Put([]byte{uint8(i)}, nil)

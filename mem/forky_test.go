@@ -36,6 +36,6 @@ func TestMemForky(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		return test.NewForkyStore(t, path, mem.NewMetaStore(forky.ShardCount))
+		return test.NewForkyStore(t, path, mem.NewMetaStore())
 	})
 }

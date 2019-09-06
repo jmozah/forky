@@ -77,8 +77,8 @@ func (t *metaTree) delete(addr chunk.Address) (deleted bool) {
 				for i, x := range b.branches {
 					if x.byte == v {
 						b.branches = append(b.branches[:i], b.branches[i+1:]...)
+						return true
 					}
-					return true
 				}
 			}
 			return b.delete(addr[1:])

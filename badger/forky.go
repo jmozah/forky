@@ -52,7 +52,7 @@ func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
 	return m, nil
 }
 
-func (s *MetaStore) Put(addr chunk.Address, m *forky.Meta) (err error) {
+func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
 	meta, err := m.MarshalBinary()
 	if err != nil {
 		return err
@@ -60,6 +60,16 @@ func (s *MetaStore) Put(addr chunk.Address, m *forky.Meta) (err error) {
 	return s.db.Update(func(txn *badger.Txn) (err error) {
 		return txn.Set(addr, meta)
 	})
+}
+
+func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
+	return s.db.Update(func(txn *badger.Txn) (err error) {
+		return txn.Delete(addr)
+	})
+}
+
+func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
+	return
 }
 
 func (s *MetaStore) Close() (err error) {

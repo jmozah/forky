@@ -28,30 +28,20 @@ import (
 var _ forky.MetaStore = new(MetaStore)
 
 type MetaStore struct {
-	db        *leveldb.DB
-	metaCache *forky.MetaCache
-	freeCache *forky.OffsetCache
+	db *leveldb.DB
 }
 
-func NewMetaStore(filename string, metaCache *forky.MetaCache, freeCache *forky.OffsetCache) (s *MetaStore, err error) {
+func NewMetaStore(filename string) (s *MetaStore, err error) {
 	db, err := leveldb.OpenFile(filename, &opt.Options{})
 	if err != nil {
 		return nil, err
 	}
 	return &MetaStore{
-		db:        db,
-		metaCache: metaCache,
-		freeCache: freeCache,
+		db: db,
 	}, err
 }
 
 func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
-	if s.metaCache != nil {
-		m = s.metaCache.Get(addr)
-	}
-	if m != nil {
-		return m, nil
-	}
 	data, err := s.db.Get(chunkKey(addr), nil)
 	if err != nil {
 		if err == leveldb.ErrNotFound {
@@ -63,49 +53,23 @@ func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
 	if err := m.UnmarshalBinary(data); err != nil {
 		return nil, err
 	}
-	if s.metaCache != nil {
-		s.metaCache.Set(addr, m)
-	}
 	return m, nil
 }
 
-func (s *MetaStore) Has(addr chunk.Address) (yes bool, err error) {
-	_, err = s.Get(addr)
-	if err != nil {
-		if err == chunk.ErrChunkNotFound {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-func (s *MetaStore) Put(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
+func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
 	batch := new(leveldb.Batch)
 	if reclaimed {
 		batch.Delete(freeKey(shard, m.Offset))
-		if s.freeCache != nil {
-			s.freeCache.Delete(shard, m.Offset)
-		}
 	}
 	meta, err := m.MarshalBinary()
 	if err != nil {
 		return err
 	}
 	batch.Put(chunkKey(addr), meta)
-	if s.metaCache != nil {
-		s.metaCache.Set(addr, m)
-	}
 	return s.db.Write(batch, nil)
 }
 
 func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
-	if s.freeCache != nil {
-		if o := s.freeCache.Get(shard); o >= 0 {
-			return o, nil
-		}
-	}
-
 	i := s.db.NewIterator(nil, nil)
 	defer i.Release()
 
@@ -115,9 +79,6 @@ func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
 		return -1, nil
 	}
 	offset = int64(binary.BigEndian.Uint64(key[2:10]))
-	if s.freeCache != nil {
-		s.freeCache.Set(shard, offset)
-	}
 	return offset, nil
 }
 
@@ -128,12 +89,6 @@ func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
 	}
 	batch := new(leveldb.Batch)
 	batch.Put(freeKey(shard, m.Offset), nil)
-	if s.metaCache != nil {
-		s.metaCache.Delete(addr)
-	}
-	if s.freeCache != nil {
-		s.freeCache.Set(shard, m.Offset)
-	}
 	batch.Delete(chunkKey(addr))
 	return s.db.Write(batch, nil)
 }

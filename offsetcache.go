@@ -18,22 +18,22 @@ package forky
 
 import "sync"
 
-type OffsetCache struct {
+type offsetCache struct {
 	m  map[uint8]map[int64]struct{}
 	mu sync.RWMutex
 }
 
-func NewOffsetCache(shardCount uint8) (c *OffsetCache) {
+func newOffsetCache(shardCount uint8) (c *offsetCache) {
 	m := make(map[uint8]map[int64]struct{})
 	for i := uint8(0); i < shardCount; i++ {
 		m[i] = make(map[int64]struct{})
 	}
-	return &OffsetCache{
+	return &offsetCache{
 		m: m,
 	}
 }
 
-func (c *OffsetCache) Get(shard uint8) (offset int64) {
+func (c *offsetCache) get(shard uint8) (offset int64) {
 	c.mu.RLock()
 	for o := range c.m[shard] {
 		c.mu.RUnlock()
@@ -43,13 +43,13 @@ func (c *OffsetCache) Get(shard uint8) (offset int64) {
 	return -1
 }
 
-func (c *OffsetCache) Set(shard uint8, offset int64) {
+func (c *offsetCache) set(shard uint8, offset int64) {
 	c.mu.Lock()
 	c.m[shard][offset] = struct{}{}
 	c.mu.Unlock()
 }
 
-func (c *OffsetCache) Delete(shard uint8, offset int64) {
+func (c *offsetCache) delete(shard uint8, offset int64) {
 	c.mu.Lock()
 	delete(c.m[shard], offset)
 	c.mu.Unlock()
