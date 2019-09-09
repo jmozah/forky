@@ -25,8 +25,8 @@ import (
 	"github.com/ethersphere/swarm/chunk"
 )
 
-func TestMetaTree(t *testing.T) {
-	var mt metaTree
+func TestMetaTrie(t *testing.T) {
+	var mt metaTrie
 
 	addr := generateRandomAddress(32)
 	meta := &Meta{
@@ -44,9 +44,9 @@ func TestMetaTree(t *testing.T) {
 		t.Errorf("got meta %s, want %s", got, meta)
 	}
 
-	deleted := mt.delete(addr)
-	if !deleted {
-		t.Error("should be deleted")
+	removed := mt.remove(addr)
+	if !removed {
+		t.Error("should be removed")
 	}
 
 	got = mt.get(addr)
@@ -55,19 +55,34 @@ func TestMetaTree(t *testing.T) {
 	}
 }
 
-func TestMetaTreeMultiAddress(t *testing.T) {
-	var mt metaTree
+func TestMetaTrieMultiAddress(t *testing.T) {
+	var mt metaTrie
 
-	addrs := make([]chunk.Address, 7)
-	addrs[0] = generateRandomAddress(64)
-	addrs[1] = generateRandomAddress(32)
+	addrs := make([]chunk.Address, 11)
+	// regular address
+	addrs[0] = generateRandomAddress(32)
+	// address for encrypted chunk
+	addrs[1] = generateRandomAddress(64)
+	// unusual address
 	addrs[2] = generateRandomAddress(17)
+	// regular address
 	addrs[3] = generateRandomAddress(32)
-	addrs[4] = generateRandomAddress(64)
-	addrs[5] = generateRandomAddress(35)
-	addrs[6] = addrs[0][:32]
+	// regular address
+	addrs[4] = append(generateRandomAddress(31), 0)
+	// regular address with last only last byte different
+	addrs[5] = append(append([]byte{}, addrs[3][:31]...), 1)
+	// address for encrypted chunk
+	addrs[6] = generateRandomAddress(64)
+	// unusual long address
+	addrs[7] = generateRandomAddress(1025)
+	// unusual address
+	addrs[8] = generateRandomAddress(35)
+	// regular address, the same as encrypted one's first part
+	addrs[9] = addrs[1][:32]
+	// address for encrypted chunk that begins as one of regular addresses
+	addrs[10] = append(append([]byte{}, addrs[0]...), generateRandomAddress(32)...)
 
-	metas := make([]*Meta, 7)
+	metas := make([]*Meta, 11)
 	metas[0] = &Meta{
 		Offset: 4094,
 		Size:   0,
@@ -96,6 +111,22 @@ func TestMetaTreeMultiAddress(t *testing.T) {
 		Offset: 4094 * 32,
 		Size:   6,
 	}
+	metas[7] = &Meta{
+		Offset: 4094 * 11,
+		Size:   7,
+	}
+	metas[8] = &Meta{
+		Offset: 4094 * 4,
+		Size:   8,
+	}
+	metas[9] = &Meta{
+		Offset: 4094 * 72,
+		Size:   9,
+	}
+	metas[10] = &Meta{
+		Offset: 4094 * 26,
+		Size:   10,
+	}
 
 	for i, addr := range addrs {
 		overwritten := mt.set(addr, metas[i])
@@ -116,31 +147,31 @@ func TestMetaTreeMultiAddress(t *testing.T) {
 
 	checkAddrs()
 
-	deletedAddrs := make([]chunk.Address, 0)
+	removedAddrs := make([]chunk.Address, 0)
 	for i := 0; len(addrs) > 0; i++ {
 		addr := addrs[0]
-		deleted := mt.delete(addr)
-		if !deleted {
-			t.Errorf("meta %v should be deleted", i)
+		removed := mt.remove(addr)
+		if !removed {
+			t.Errorf("meta %v should be removed", i)
 		}
 		addrs = addrs[1:]
 		metas = metas[1:]
-		deletedAddrs = append(deletedAddrs, addr)
+		removedAddrs = append(removedAddrs, addr)
 
 		checkAddrs()
 
-		for i, addr := range deletedAddrs {
+		for i, addr := range removedAddrs {
 			got := mt.get(addr)
 			if got != nil {
-				t.Errorf("got meta for deleted address %v %s, expected <nil>", i, got)
+				t.Errorf("got meta for removed address %v %s, expected <nil>", i, got)
 			}
 		}
 	}
 }
 
-var resultBenchmarkMetaTree *Meta
+var resultBenchmarkMetaTrie *Meta
 
-func BenchmarkMapVsTree(b *testing.B) {
+func BenchmarkMapVsTrie(b *testing.B) {
 	const itemCount = 1000
 	type item struct {
 		addr chunk.Address
@@ -175,7 +206,7 @@ func BenchmarkMapVsTree(b *testing.B) {
 					r = m[string(i.addr)]
 				}
 			}
-			resultBenchmarkMetaTree = r
+			resultBenchmarkMetaTrie = r
 		})
 		b.Run("delete", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
@@ -186,8 +217,8 @@ func BenchmarkMapVsTree(b *testing.B) {
 		})
 	})
 
-	b.Run("tree", func(b *testing.B) {
-		var mt metaTree
+	b.Run("trie", func(b *testing.B) {
+		var mt metaTrie
 		b.Run("set", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, i := range items {
@@ -202,12 +233,12 @@ func BenchmarkMapVsTree(b *testing.B) {
 					r = mt.get(i.addr)
 				}
 			}
-			resultBenchmarkMetaTree = r
+			resultBenchmarkMetaTrie = r
 		})
 		b.Run("delete", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, i := range items {
-					mt.delete(i.addr)
+					mt.remove(i.addr)
 				}
 			}
 		})

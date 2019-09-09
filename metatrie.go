@@ -20,13 +20,13 @@ import (
 	"github.com/ethersphere/swarm/chunk"
 )
 
-type metaTree struct {
+type metaTrie struct {
 	byte     byte
 	value    *Meta
-	branches []*metaTree
+	branches []*metaTrie
 }
 
-func (t *metaTree) get(addr chunk.Address) (m *Meta) {
+func (t *metaTrie) get(addr chunk.Address) (m *Meta) {
 	v := addr[0]
 	for _, b := range t.branches {
 		if b.byte == v {
@@ -39,50 +39,50 @@ func (t *metaTree) get(addr chunk.Address) (m *Meta) {
 	return nil
 }
 
-func (t *metaTree) set(addr chunk.Address, m *Meta) (overwritten bool) {
-	find := func(v byte, branches []*metaTree) (i int) {
-		for i, b := range branches {
-			if b.byte == v {
-				return i
-			}
-		}
-		return -1
-	}
+func (t *metaTrie) set(addr chunk.Address, m *Meta) (overwritten bool) {
 	x := t
 	overwritten = true
 	for _, v := range addr {
-		i := find(v, x.branches)
+		i := branchIndex(v, x.branches)
 		if i < 0 {
 			i = len(x.branches)
-			x.branches = append(x.branches, &metaTree{
+			x.branches = append(x.branches, &metaTrie{
 				byte: v,
 			})
 			overwritten = false
 		}
 		x = x.branches[i]
 	}
-	x.value = m
 	if overwritten {
-		overwritten = x.branches == nil
+		overwritten = x.value != nil
 	}
+	x.value = m
 	return overwritten
 }
 
-func (t *metaTree) delete(addr chunk.Address) (deleted bool) {
+func (t *metaTrie) remove(addr chunk.Address) (removed bool) {
 	v := addr[0]
+	l := len(addr)
 	for _, b := range t.branches {
 		if b.byte == v {
-			if len(addr) == 2 {
-				v := addr[1]
-				for i, x := range b.branches {
-					if x.byte == v {
-						b.branches = append(b.branches[:i], b.branches[i+1:]...)
-						return true
-					}
+			if l == 1 {
+				if b.value != nil {
+					b.value = nil
+					return true
 				}
+				return false
 			}
-			return b.delete(addr[1:])
+			return b.remove(addr[1:])
 		}
 	}
 	return false
+}
+
+func branchIndex(v byte, branches []*metaTrie) (i int) {
+	for i, b := range branches {
+		if b.byte == v {
+			return i
+		}
+	}
+	return -1
 }

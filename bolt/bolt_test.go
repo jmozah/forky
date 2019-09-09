@@ -20,7 +20,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/ethersphere/swarm/chunk"
@@ -28,54 +27,31 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-func newBoltDB(t *testing.T) (db *bolt.DB, clean func()) {
-	t.Helper()
+func BenchmarkBoltDBPut(b *testing.B) {
+	count := 1000
 
-	path, err := ioutil.TempDir("", "swarm-forky")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	db, err = bolt.Open(filepath.Join(path, "test.db"), 0666, nil)
-	if err != nil {
-		os.RemoveAll(path)
-		t.Fatal(err)
-	}
-	return db, func() {
-		db.Close()
-		os.RemoveAll(path)
-	}
-}
-
-func TestBoltDBPut(t *testing.T) {
 	var bucketNameChunkMeta = []byte("ChunkMeta")
-	for _, count := range []int{
-		1, 10, 100, 1000,
-	} {
-		t.Run(strconv.Itoa(count), func(t *testing.T) {
-			db, clean := newBoltDB(t)
-			defer clean()
 
+	db, clean := newBoltDB(b)
+	defer clean()
+
+	if err := db.Update(func(tx *bolt.Tx) (err error) {
+		_, err = tx.CreateBucketIfNotExists(bucketNameChunkMeta)
+		return err
+	}); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		for i := 0; i < count; i++ {
 			if err := db.Update(func(tx *bolt.Tx) (err error) {
-				_, err = tx.CreateBucketIfNotExists(bucketNameChunkMeta)
-				return err
+				return tx.Bucket(bucketNameChunkMeta).Put([]byte{uint8(i)}, nil)
 			}); err != nil {
-				t.Fatal(err)
+				b.Fatal(err)
 			}
-
-			chunks := make([]chunk.Chunk, count)
-			for i := 0; i < count; i++ {
-				ch := test.GenerateTestRandomChunk()
-
-				if err := db.Update(func(tx *bolt.Tx) (err error) {
-					return tx.Bucket(bucketNameChunkMeta).Put([]byte{uint8(i)}, nil)
-				}); err != nil {
-					t.Fatal(err)
-				}
-
-				chunks[i] = ch
-			}
-		})
+		}
 	}
 }
 
@@ -128,4 +104,23 @@ func BenchmarkBoltDB(b *testing.B) {
 	b.Run("nosync", func(b *testing.B) {
 		test(b, false)
 	})
+}
+
+func newBoltDB(t testing.TB) (db *bolt.DB, clean func()) {
+	t.Helper()
+
+	path, err := ioutil.TempDir("", "swarm-forky-")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = bolt.Open(filepath.Join(path, "test.db"), 0666, nil)
+	if err != nil {
+		os.RemoveAll(path)
+		t.Fatal(err)
+	}
+	return db, func() {
+		db.Close()
+		os.RemoveAll(path)
+	}
 }

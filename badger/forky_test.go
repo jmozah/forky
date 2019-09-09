@@ -18,6 +18,7 @@ package badger_test
 
 import (
 	"io/ioutil"
+	"path/filepath"
 	"testing"
 
 	"github.com/janos/forky"
@@ -26,13 +27,13 @@ import (
 )
 
 func TestBadgerForky(t *testing.T) {
-	test.StoreSuite(t, []int{1000, 10000, 100000, 1000000}, func(t *testing.T) (forky.Interface, func()) {
+	test.StoreSuite(t, func(t *testing.T) (forky.Interface, func()) {
 		path, err := ioutil.TempDir("", "swarm-forky-")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		metaStore, err := badger.NewMetaStore(path)
+		metaStore, err := badger.NewMetaStore(filepath.Join(path, "meta"))
 		if err != nil {
 			t.Fatal(err)
 		}

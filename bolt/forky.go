@@ -17,6 +17,8 @@
 package bolt
 
 import (
+	"encoding/binary"
+
 	"github.com/ethersphere/swarm/chunk"
 	"github.com/janos/forky"
 	bolt "go.etcd.io/bbolt"
@@ -25,23 +27,27 @@ import (
 var _ forky.MetaStore = new(MetaStore)
 
 var (
-	bucketNameMeta = []byte("Meta")
-	bucketNameFree = []byte("Free")
+	bucketNameChunkMeta   = []byte("ChunkMeta")
+	bucketNameFreeOffsets = []byte("FreeOffsets")
 )
 
 type MetaStore struct {
 	db *bolt.DB
 }
 
-func NewMetaStore(filename string) (s *MetaStore, err error) {
+func NewMetaStore(filename string, noSync bool) (s *MetaStore, err error) {
 	db, err := bolt.Open(filename, 0666, &bolt.Options{
-		NoSync: true,
+		NoSync: noSync,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Update(func(tx *bolt.Tx) (err error) {
-		_, err = tx.CreateBucketIfNotExists(bucketNameMeta)
+		_, err = tx.CreateBucketIfNotExists(bucketNameChunkMeta)
+		if err != nil {
+			return err
+		}
+		_, err = tx.CreateBucketIfNotExists(bucketNameFreeOffsets)
 		return err
 	}); err != nil {
 		return nil, err
@@ -50,20 +56,11 @@ func NewMetaStore(filename string) (s *MetaStore, err error) {
 }
 
 func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
-	if err := s.db.View(func(tx *bolt.Tx) (err error) {
-		data := tx.Bucket(bucketNameMeta).Get(addr)
-		if data == nil {
-			return chunk.ErrChunkNotFound
-		}
-		m = new(forky.Meta)
-		if err := m.UnmarshalBinary(data); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return m, nil
+	err = s.db.View(func(tx *bolt.Tx) (err error) {
+		m, err = getMeta(tx.Bucket(bucketNameChunkMeta), addr)
+		return err
+	})
+	return m, err
 }
 
 func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
@@ -72,20 +69,64 @@ func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *fork
 		return err
 	}
 	return s.db.Update(func(tx *bolt.Tx) (err error) {
-		return tx.Bucket(bucketNameMeta).Put(addr, meta)
+		if reclaimed {
+			err = tx.Bucket(bucketNameFreeOffsets).Delete(freeKey(shard, m.Offset))
+			if err != nil {
+				return err
+			}
+		}
+		return tx.Bucket(bucketNameChunkMeta).Put(addr, meta)
 	})
 }
 
-func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
-	return 0, nil
+func (s *MetaStore) FreeOffset(shard uint8) (offset int64, err error) {
+	offset = -1
+	err = s.db.View(func(tx *bolt.Tx) (err error) {
+		c := tx.Bucket(bucketNameFreeOffsets).Cursor()
+		key, _ := c.Seek([]byte{shard})
+		if key == nil || key[0] != shard {
+			return nil
+		}
+		offset = int64(binary.BigEndian.Uint64(key[1:9]))
+		return err
+	})
+	return offset, err
 }
 
-func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
+func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	return s.db.Update(func(tx *bolt.Tx) (err error) {
-		return tx.Bucket(bucketNameMeta).Delete(addr)
+		b := tx.Bucket(bucketNameChunkMeta)
+		m, err := getMeta(b, addr)
+		if err != nil {
+			return err
+		}
+		err = tx.Bucket(bucketNameFreeOffsets).Put(freeKey(shard, m.Offset), nil)
+		if err != nil {
+			return err
+		}
+		return b.Delete(addr)
 	})
 }
 
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
+}
+
+func getMeta(b *bolt.Bucket, addr chunk.Address) (m *forky.Meta, err error) {
+	data := b.Get(addr)
+	if data == nil {
+		return nil, chunk.ErrChunkNotFound
+	}
+	m = new(forky.Meta)
+	if err := m.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func freeKey(shard uint8, offset int64) (key []byte) {
+	key = make([]byte, 9)
+	key[0] = shard
+	binary.BigEndian.PutUint64(key[1:9], uint64(offset))
+	return key
 }

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the Swarm library. If not, see <http://www.gnu.org/licenses/>.
 
-package leveldb_test
+package bolt_test
 
 import (
 	"io/ioutil"
@@ -22,18 +22,28 @@ import (
 	"testing"
 
 	"github.com/janos/forky"
-	"github.com/janos/forky/leveldb"
+	"github.com/janos/forky/bolt"
 	"github.com/janos/forky/test"
 )
 
-func TestLevelDBForky(t *testing.T) {
+func TestBoltForkySync(t *testing.T) {
+	testBoltForky(t, false)
+}
+
+func TestBoltForkyNoSync(t *testing.T) {
+	testBoltForky(t, true)
+}
+
+func testBoltForky(t *testing.T, noSync bool) {
+	t.Helper()
+
 	test.StoreSuite(t, func(t *testing.T) (forky.Interface, func()) {
 		path, err := ioutil.TempDir("", "swarm-forky-")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		metaStore, err := leveldb.NewMetaStore(filepath.Join(path, "meta"))
+		metaStore, err := bolt.NewMetaStore(filepath.Join(path, "test.db"), noSync)
 		if err != nil {
 			t.Fatal(err)
 		}

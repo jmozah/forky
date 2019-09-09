@@ -6,7 +6,7 @@ Ethereum Swarm Chunk Store experiment. Intended only for demonstration of possib
 
 Name _forky_ comes from the default Swarm fixed chunk data size of 4096 bytes or 4K (four kay -> forky) bytes, as this storage supports only fixed sized data chunks.
 
-It is also a Toy Story 4 character. Given that Debian project uses Toy Story character names for release codnames, such correlation is quite nice.
+It is also a Toy Story 4 character. Given that Debian project uses Toy Story character names for release codenames, such correlation is quite nice.
 
 ## License
 

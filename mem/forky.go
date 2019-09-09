@@ -62,7 +62,7 @@ func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *fork
 	return nil
 }
 
-func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
+func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := string(addr)
@@ -75,7 +75,7 @@ func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
 	return nil
 }
 
-func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
+func (s *MetaStore) FreeOffset(shard uint8) (offset int64, err error) {
 	s.mu.RLock()
 	for o := range s.free[shard] {
 		s.mu.RUnlock()

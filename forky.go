@@ -126,9 +126,6 @@ func (s *Store) Has(addr chunk.Address) (yes bool, err error) {
 		}
 		return false, err
 	}
-	if m == nil {
-		return false, nil
-	}
 	if s.metaCache != nil {
 		s.metaCache.set(addr, m)
 	}
@@ -163,7 +160,7 @@ func (s *Store) Put(ch chunk.Chunk) (err error) {
 			freeOffset = s.freeCache.get(shard)
 		}
 		if freeOffset < 0 {
-			freeOffset, err = s.meta.Free(shard)
+			freeOffset, err = s.meta.FreeOffset(shard)
 			if err != nil {
 				return err
 			}
@@ -199,7 +196,7 @@ func (s *Store) Put(ch chunk.Chunk) (err error) {
 	}
 	if reclaimed {
 		if s.freeCache != nil {
-			s.freeCache.delete(shard, offset)
+			s.freeCache.remove(shard, offset)
 		}
 		defer mu.Unlock()
 	} else {
@@ -239,9 +236,9 @@ func (s *Store) Delete(addr chunk.Address) (err error) {
 		s.freeCache.set(shard, m.Offset)
 	}
 	if s.metaCache != nil {
-		s.metaCache.delete(addr)
+		s.metaCache.remove(addr)
 	}
-	return s.meta.Delete(addr, shard)
+	return s.meta.Remove(addr, shard)
 }
 
 func (s *Store) Close() (err error) {
@@ -301,8 +298,8 @@ func getShard(addr chunk.Address) (shard uint8) {
 type MetaStore interface {
 	Get(addr chunk.Address) (*Meta, error)
 	Set(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
-	Delete(addr chunk.Address, shard uint8) error
-	Free(shard uint8) (int64, error)
+	Remove(addr chunk.Address, shard uint8) error
+	FreeOffset(shard uint8) (int64, error)
 	Close() error
 }
 

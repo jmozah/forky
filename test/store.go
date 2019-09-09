@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -31,64 +30,58 @@ import (
 	"github.com/janos/forky"
 )
 
-func StoreSuite(t *testing.T, chunkCounts []int, newStoreFunc func(t *testing.T) (forky.Interface, func())) {
-	if *chunksFlag > 0 {
-		chunkCounts = []int{*chunksFlag}
-	}
-	for _, chunkCount := range chunkCounts {
-		t.Run(strconv.Itoa(chunkCount)+"-chunks", func(t *testing.T) {
-			t.Run("empty", func(t *testing.T) {
-				TestStore(t, &TestStoreOptions{
-					ChunkCount:   chunkCount,
-					NewStoreFunc: newStoreFunc,
-				})
-			})
+func StoreSuite(t *testing.T, newStoreFunc func(t *testing.T) (forky.Interface, func())) {
 
-			t.Run("cleaned", func(t *testing.T) {
-				TestStore(t, &TestStoreOptions{
-					ChunkCount:   chunkCount,
-					NewStoreFunc: newStoreFunc,
-					Cleaned:      true,
-				})
-			})
+	t.Run("empty", func(t *testing.T) {
+		TestStore(t, &TestStoreOptions{
+			ChunkCount:   *chunksFlag,
+			NewStoreFunc: newStoreFunc,
+		})
+	})
 
-			for _, tc := range []struct {
-				name        string
-				deleteSplit int
-			}{
-				{
-					name:        "delete-all",
-					deleteSplit: 1,
-				},
-				{
-					name:        "delete-half",
-					deleteSplit: 2,
-				},
-				{
-					name:        "delete-fifth",
-					deleteSplit: 5,
-				},
-				{
-					name:        "delete-tenth",
-					deleteSplit: 10,
-				},
-				{
-					name:        "delete-percent",
-					deleteSplit: 100,
-				},
-				{
-					name:        "delete-permill",
-					deleteSplit: 1000,
-				},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					TestStore(t, &TestStoreOptions{
-						ChunkCount:   chunkCount,
-						DeleteSplit:  tc.deleteSplit,
-						NewStoreFunc: newStoreFunc,
-					})
-				})
-			}
+	t.Run("cleaned", func(t *testing.T) {
+		TestStore(t, &TestStoreOptions{
+			ChunkCount:   *chunksFlag,
+			NewStoreFunc: newStoreFunc,
+			Cleaned:      true,
+		})
+	})
+
+	for _, tc := range []struct {
+		name        string
+		deleteSplit int
+	}{
+		{
+			name:        "delete-all",
+			deleteSplit: 1,
+		},
+		{
+			name:        "delete-half",
+			deleteSplit: 2,
+		},
+		{
+			name:        "delete-fifth",
+			deleteSplit: 5,
+		},
+		{
+			name:        "delete-tenth",
+			deleteSplit: 10,
+		},
+		{
+			name:        "delete-percent",
+			deleteSplit: 100,
+		},
+		{
+			name:        "delete-permill",
+			deleteSplit: 1000,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			TestStore(t, &TestStoreOptions{
+				ChunkCount:   *chunksFlag,
+				DeleteSplit:  tc.deleteSplit,
+				NewStoreFunc: newStoreFunc,
+			})
 		})
 	}
 }
@@ -223,67 +216,6 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 		wg.Wait()
 	})
 }
-
-// func TestForky2(t *testing.T) {
-// 	testStore2(t, NewStore)
-// }
-
-// func testStore2(t *testing.T, newStore func(t *testing.T) (forky.Store, func())) {
-// 	t.Helper()
-
-// 	totalChunks := 1000000
-// 	iterationCount := 10000
-
-// 	chunks := make([]chunk.Chunk, totalChunks)
-// 	for i := 0; i < totalChunks; i++ {
-// 		ch := GenerateTestRandomChunk()
-
-// 		chunks[i] = ch
-// 	}
-
-// 	db, clean := newStore(t)
-// 	defer clean()
-
-// 	for i := 1; i <= totalChunks/iterationCount; i++ {
-// 		t.Run(strconv.Itoa(i*iterationCount), func(t *testing.T) {
-
-// 			t.Run("write", func(t *testing.T) {
-// 				sem := make(chan struct{}, 8)
-// 				var wg sync.WaitGroup
-// 				wg.Add(iterationCount)
-// 				for _, ch := range chunks[(i-1)*iterationCount : i*iterationCount] {
-// 					sem <- struct{}{}
-// 					go func(ch chunk.Chunk) {
-// 						defer func() {
-// 							<-sem
-// 							wg.Done()
-// 						}()
-// 						if err := db.Put(ch); err != nil {
-// 							t.Fatal(err)
-// 						}
-// 					}(ch)
-// 				}
-// 				wg.Wait()
-// 			})
-
-// 			t.Run("read", func(t *testing.T) {
-// 				for i, ch := range chunks[(i-1)*iterationCount : i*iterationCount] {
-// 					got, err := db.Get(ch.Address())
-// 					if err != nil {
-// 						t.Fatalf("chunk %v %s: %v", i, ch.Address().Hex(), err)
-// 					}
-
-// 					if !bytes.Equal(got.Address(), ch.Address()) {
-// 						t.Fatalf("got chunk %v address %x, want %x", i, got.Address(), ch.Address())
-// 					}
-// 					if !bytes.Equal(got.Data(), ch.Data()) {
-// 						t.Fatalf("got chunk %v data %x, want %x", i, got.Data(), ch.Data())
-// 					}
-// 				}
-// 			})
-// 		})
-// 	}
-// }
 
 func NewForkyStore(t *testing.T, path string, metaStore forky.MetaStore) (s *forky.Store, clean func()) {
 	t.Helper()

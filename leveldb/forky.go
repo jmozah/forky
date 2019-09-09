@@ -69,7 +69,7 @@ func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *fork
 	return s.db.Write(batch, nil)
 }
 
-func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
+func (s *MetaStore) FreeOffset(shard uint8) (offset int64, err error) {
 	i := s.db.NewIterator(nil, nil)
 	defer i.Release()
 
@@ -82,7 +82,7 @@ func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
 	return offset, nil
 }
 
-func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
+func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	m, err := s.Get(addr)
 	if err != nil {
 		return err

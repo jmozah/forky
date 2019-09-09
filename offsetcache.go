@@ -49,7 +49,7 @@ func (c *offsetCache) set(shard uint8, offset int64) {
 	c.mu.Unlock()
 }
 
-func (c *offsetCache) delete(shard uint8, offset int64) {
+func (c *offsetCache) remove(shard uint8, offset int64) {
 	c.mu.Lock()
 	delete(c.m[shard], offset)
 	c.mu.Unlock()

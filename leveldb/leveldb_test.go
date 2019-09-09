@@ -27,7 +27,7 @@ import (
 )
 
 func TestLevelDBSuite(t *testing.T) {
-	test.StoreSuite(t, []int{1000, 10000, 100000}, newLevelDB)
+	test.StoreSuite(t, newLevelDB)
 }
 
 func newLevelDB(t *testing.T) (db forky.Interface, clean func()) {

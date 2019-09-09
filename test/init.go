@@ -19,7 +19,7 @@ package test
 import "flag"
 
 var (
-	chunksFlag      = flag.Int("chunks", 0, "Number of chunks to override defaults for all tests.")
+	chunksFlag      = flag.Int("chunks", 100, "Number of chunks to use in tests.")
 	concurrencyFlag = flag.Int("concurrency", 8, "Maximal number of parallel operations.")
 	noCacheFlag     = flag.Bool("no-cache", false, "Disable forky memory cache.")
 )

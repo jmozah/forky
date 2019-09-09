@@ -30,7 +30,7 @@ func init() {
 }
 
 func TestMemForky(t *testing.T) {
-	test.StoreSuite(t, []int{1000, 10000, 100000}, func(t *testing.T) (forky.Interface, func()) {
+	test.StoreSuite(t, func(t *testing.T) (forky.Interface, func()) {
 		path, err := ioutil.TempDir("", "swarm-forky-")
 		if err != nil {
 			t.Fatal(err)

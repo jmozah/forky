@@ -17,6 +17,8 @@
 package badger
 
 import (
+	"encoding/binary"
+
 	"github.com/dgraph-io/badger"
 	"github.com/ethersphere/swarm/chunk"
 	"github.com/janos/forky"
@@ -29,7 +31,9 @@ type MetaStore struct {
 }
 
 func NewMetaStore(path string) (s *MetaStore, err error) {
-	db, err := badger.Open(badger.DefaultOptions(path))
+	o := badger.DefaultOptions(path)
+	o.Logger = nil
+	db, err := badger.Open(o)
 	if err != nil {
 		return nil, err
 	}
@@ -37,19 +41,11 @@ func NewMetaStore(path string) (s *MetaStore, err error) {
 }
 
 func (s *MetaStore) Get(addr chunk.Address) (m *forky.Meta, err error) {
-	if err := s.db.View(func(txn *badger.Txn) (err error) {
-		item, err := txn.Get(addr)
-		if err != nil {
-			return err
-		}
-		m = new(forky.Meta)
-		return item.Value(func(val []byte) error {
-			return m.UnmarshalBinary(val)
-		})
-	}); err != nil {
-		return nil, err
-	}
-	return m, nil
+	err = s.db.View(func(txn *badger.Txn) (err error) {
+		m, err = getMeta(txn, chunkKey(addr))
+		return err
+	})
+	return m, err
 }
 
 func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *forky.Meta) (err error) {
@@ -58,20 +54,86 @@ func (s *MetaStore) Set(addr chunk.Address, shard uint8, reclaimed bool, m *fork
 		return err
 	}
 	return s.db.Update(func(txn *badger.Txn) (err error) {
-		return txn.Set(addr, meta)
+		if reclaimed {
+			err = txn.Delete(freeKey(shard, m.Offset))
+			if err != nil {
+				return err
+			}
+		}
+		return txn.Set(chunkKey(addr), meta)
 	})
 }
 
-func (s *MetaStore) Delete(addr chunk.Address, shard uint8) (err error) {
+func (s *MetaStore) FreeOffset(shard uint8) (offset int64, err error) {
+	offset = -1
+	err = s.db.View(func(txn *badger.Txn) (err error) {
+		i := txn.NewIterator(badger.IteratorOptions{})
+		defer i.Close()
+		prefix := []byte{freePrefix, shard}
+		i.Seek(prefix)
+		if !i.ValidForPrefix(prefix) {
+			return nil
+		}
+		item := i.Item()
+		if item == nil {
+			return nil
+		}
+		key := item.Key()
+		if key == nil {
+			return nil
+		}
+		offset = int64(binary.BigEndian.Uint64(key[1:9]))
+		return err
+	})
+	return offset, err
+}
+
+func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	return s.db.Update(func(txn *badger.Txn) (err error) {
-		return txn.Delete(addr)
+		key := chunkKey(addr)
+		m, err := getMeta(txn, key)
+		if err != nil {
+			return err
+		}
+		err = txn.Set(freeKey(shard, m.Offset), nil)
+		if err != nil {
+			return err
+		}
+		return txn.Delete(key)
 	})
-}
-
-func (s *MetaStore) Free(shard uint8) (offset int64, err error) {
-	return
 }
 
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
+}
+
+func getMeta(txn *badger.Txn, key []byte) (m *forky.Meta, err error) {
+	item, err := txn.Get(key)
+	if err != nil {
+		if err == badger.ErrKeyNotFound {
+			return nil, chunk.ErrChunkNotFound
+		}
+		return nil, err
+	}
+	m = new(forky.Meta)
+	return m, item.Value(func(val []byte) error {
+		return m.UnmarshalBinary(val)
+	})
+}
+
+const (
+	chunkPrefix = 0
+	freePrefix  = 1
+)
+
+func chunkKey(addr chunk.Address) (key []byte) {
+	return append([]byte{chunkPrefix}, addr...)
+}
+
+func freeKey(shard uint8, offset int64) (key []byte) {
+	key = make([]byte, 10)
+	key[0] = freePrefix
+	key[1] = shard
+	binary.BigEndian.PutUint64(key[2:10], uint64(offset))
+	return key
 }

@@ -23,7 +23,7 @@ import (
 )
 
 type metaCache struct {
-	m  metaTree
+	t  metaTrie
 	mu sync.RWMutex
 }
 
@@ -33,19 +33,19 @@ func newMetaCache() (c *metaCache) {
 
 func (c *metaCache) get(addr chunk.Address) (m *Meta) {
 	c.mu.RLock()
-	m = c.m.get(addr)
+	m = c.t.get(addr)
 	c.mu.RUnlock()
 	return m
 }
 
 func (c *metaCache) set(addr chunk.Address, m *Meta) {
 	c.mu.Lock()
-	c.m.set(addr, m)
+	c.t.set(addr, m)
 	c.mu.Unlock()
 }
 
-func (c *metaCache) delete(addr chunk.Address) {
+func (c *metaCache) remove(addr chunk.Address) {
 	c.mu.Lock()
-	c.m.delete(addr)
+	c.t.remove(addr)
 	c.mu.Unlock()
 }
