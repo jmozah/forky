@@ -8,6 +8,23 @@ Name _forky_ comes from the default Swarm fixed chunk data size of 4096 bytes or
 
 It is also a Toy Story 4 character. Given that Debian project uses Toy Story character names for release codenames, such correlation is quite nice.
 
+## Tests
+
+Default tests are configured to validate correctness of implementations:
+
+```
+go test -v 
+```
+
+To see results with different number of chunks tests can be run with optional arguments:
+
+```
+go test -timeout 30m -v github.com/janos/forky/leveldb -chunks 1000000
+```
+
+This will run both plain LevelDB store and Forky with LevelDB MetaStore tests with timings for comparison. A high number of chunks require setting an appropriate timeout flag, also.
+
+
 ## License
 
 The forky library is licensed under the
