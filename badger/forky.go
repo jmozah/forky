@@ -19,7 +19,7 @@ package badger
 import (
 	"encoding/binary"
 
-	"github.com/dgraph-io/badger"
+	"github.com/dgraph-io/badger/v2"
 	"github.com/ethersphere/swarm/chunk"
 	"github.com/janos/forky"
 )
