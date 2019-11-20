@@ -18,7 +18,6 @@ package leveldb
 
 import (
 	"github.com/ethersphere/swarm/chunk"
-	"github.com/ethersphere/swarm/storage"
 	"github.com/janos/forky"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -42,7 +41,7 @@ func NewLevelDBStore(path string) (s *LevelDBStore, err error) {
 	}, nil
 }
 
-func (s *LevelDBStore) Get(addr storage.Address) (c storage.Chunk, err error) {
+func (s *LevelDBStore) Get(addr chunk.Address) (c chunk.Chunk, err error) {
 	data, err := s.db.Get(addr, nil)
 	if err != nil {
 		if err == leveldb.ErrNotFound {
@@ -53,15 +52,15 @@ func (s *LevelDBStore) Get(addr storage.Address) (c storage.Chunk, err error) {
 	return chunk.NewChunk(addr, data), nil
 }
 
-func (s *LevelDBStore) Has(addr storage.Address) (yes bool, err error) {
+func (s *LevelDBStore) Has(addr chunk.Address) (yes bool, err error) {
 	return s.db.Has(addr, nil)
 }
 
-func (s *LevelDBStore) Put(ch storage.Chunk) (err error) {
+func (s *LevelDBStore) Put(ch chunk.Chunk) (err error) {
 	return s.db.Put(ch.Address(), ch.Data(), nil)
 }
 
-func (s *LevelDBStore) Delete(addr storage.Address) (err error) {
+func (s *LevelDBStore) Delete(addr chunk.Address) (err error) {
 	return s.db.Delete(addr, nil)
 }
 
