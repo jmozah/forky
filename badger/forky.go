@@ -107,10 +107,57 @@ func (s *MetaStore) Count() (count int, err error) {
 	err = s.db.View(func(txn *badger.Txn) (err error) {
 		i := txn.NewIterator(badger.IteratorOptions{})
 		defer i.Close()
-		count++
+		for i.Rewind(); i.Valid(); i.Next() {
+			item := i.Item()
+			k := item.Key()
+			if len(k) < 1 {
+				continue
+			}
+			v, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			if len(v) == 0 {
+				continue
+			}
+			count++
+		}
 		return nil
 	})
 	return count, err
+}
+
+func (s *MetaStore) Iterate(fn func(chunk.Address, *forky.Meta) (stop bool, err error)) (err error) {
+	return s.db.View(func(txn *badger.Txn) (err error) {
+		i := txn.NewIterator(badger.IteratorOptions{})
+		defer i.Close()
+		for i.Rewind(); i.Valid(); i.Next() {
+			item := i.Item()
+			k := item.Key()
+			if len(k) < 1 {
+				continue
+			}
+			v, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			if len(v) == 0 {
+				continue
+			}
+			m := new(forky.Meta)
+			if err := m.UnmarshalBinary(v); err != nil {
+				return err
+			}
+			stop, err := fn(chunk.Address(k[1:]), m)
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		return nil
+	})
 }
 
 func (s *MetaStore) Close() (err error) {

@@ -98,9 +98,45 @@ func (s *MetaStore) Count() (count int, err error) {
 	defer it.Release()
 
 	for ok := it.First(); ok; ok = it.Next() {
+		value := it.Value()
+		if len(value) == 0 {
+			continue
+		}
+		key := it.Key()
+		if len(key) < 1 {
+			continue
+		}
 		count++
 	}
-	return count, nil
+	return count, it.Error()
+}
+
+func (s *MetaStore) Iterate(fn func(chunk.Address, *forky.Meta) (stop bool, err error)) (err error) {
+	it := s.db.NewIterator(nil, nil)
+	defer it.Release()
+
+	for ok := it.First(); ok; ok = it.Next() {
+		value := it.Value()
+		if len(value) == 0 {
+			continue
+		}
+		key := it.Key()
+		if len(key) < 1 {
+			continue
+		}
+		m := new(forky.Meta)
+		if err := m.UnmarshalBinary(value); err != nil {
+			return err
+		}
+		stop, err := fn(chunk.Address(key[1:]), m)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return it.Error()
 }
 
 func (s *MetaStore) Close() (err error) {

@@ -152,6 +152,7 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 		sem := make(chan struct{}, *concurrencyFlag)
 		var wg sync.WaitGroup
 		var wantCount int
+		var wantCountMu sync.Mutex
 		wg.Add(o.ChunkCount)
 		for i, ch := range chunks {
 			sem <- struct{}{}
@@ -171,7 +172,9 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 					}
 					deletedChunks.Store(string(ch.Address()), nil)
 				} else {
+					wantCountMu.Lock()
 					wantCount++
+					wantCountMu.Unlock()
 				}
 			}(i, ch)
 		}
@@ -181,8 +184,27 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err != nil {
-			t.Fatalf("got %v count, want %v count", gotCount, wantCount)
+		if gotCount != wantCount {
+			t.Fatalf("got %v count, want %v", gotCount, wantCount)
+		}
+
+		var iteratedCount int
+		if err := db.Iterate(func(ch chunk.Chunk) (stop bool, err error) {
+			for _, c := range chunks {
+				if bytes.Equal(c.Address(), ch.Address()) {
+					if !bytes.Equal(c.Data(), ch.Data()) {
+						t.Fatalf("invalid data in iterator for key %s", c.Address())
+					}
+					iteratedCount++
+					return false, nil
+				}
+			}
+			return false, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if iteratedCount != wantCount {
+			t.Fatalf("iterated on %v chunks, want %v", iteratedCount, wantCount)
 		}
 	})
 

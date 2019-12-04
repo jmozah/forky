@@ -92,6 +92,21 @@ func (s *MetaStore) Count() (count int, err error) {
 	return count, nil
 }
 
+func (s *MetaStore) Iterate(fn func(chunk.Address, *forky.Meta) (stop bool, err error)) (err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for a, m := range s.meta {
+		stop, err := fn(chunk.Address(a), m)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return nil
+}
+
 func (s *MetaStore) Close() (err error) {
 	return nil
 }

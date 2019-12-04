@@ -74,6 +74,30 @@ func (s *LevelDBStore) Count() (count int, err error) {
 	return count, nil
 }
 
+func (s *LevelDBStore) Iterate(fn func(chunk.Chunk) (stop bool, err error)) (err error) {
+	it := s.db.NewIterator(nil, nil)
+	defer it.Release()
+
+	for ok := it.First(); ok; ok = it.Next() {
+		value := it.Value()
+		if len(value) == 0 {
+			continue
+		}
+		key := it.Key()
+		if len(key) == 0 {
+			continue
+		}
+		stop, err := fn(chunk.NewChunk(it.Key(), it.Value()))
+		if err != nil {
+			return err
+		}
+		if stop {
+			return it.Error()
+		}
+	}
+	return it.Error()
+}
+
 func (s *LevelDBStore) Close() error {
 	return s.db.Close()
 }

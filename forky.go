@@ -35,6 +35,7 @@ type Interface interface {
 	Put(ch chunk.Chunk) (err error)
 	Delete(addr chunk.Address) (err error)
 	Count() (count int, err error)
+	Iterate(func(ch chunk.Chunk) (stop bool, err error)) (err error)
 	Close() (err error)
 }
 
@@ -246,6 +247,32 @@ func (s *Store) Count() (count int, err error) {
 	return s.meta.Count()
 }
 
+func (s *Store) Iterate(fn func(chunk.Chunk) (stop bool, err error)) (err error) {
+	done, err := s.protect()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	for _, mu := range s.shardsMu {
+		mu.Lock()
+	}
+	defer func() {
+		for _, mu := range s.shardsMu {
+			mu.Unlock()
+		}
+	}()
+
+	return s.meta.Iterate(func(addr chunk.Address, m *Meta) (stop bool, err error) {
+		data := make([]byte, m.Size)
+		_, err = s.shards[getShard(addr)].ReadAt(data, m.Offset)
+		if err != nil {
+			return true, err
+		}
+		return fn(chunk.NewChunk(addr, data))
+	})
+}
+
 func (s *Store) Close() (err error) {
 	s.quitOnce.Do(func() {
 		close(s.quit)
@@ -305,6 +332,7 @@ type MetaStore interface {
 	Set(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
 	Remove(addr chunk.Address, shard uint8) error
 	Count() (int, error)
+	Iterate(func(chunk.Address, *Meta) (stop bool, err error)) error
 	FreeOffset(shard uint8) (int64, error)
 	Close() error
 }

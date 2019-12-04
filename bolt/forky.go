@@ -120,6 +120,29 @@ func (s *MetaStore) Count() (count int, err error) {
 	return count, err
 }
 
+func (s *MetaStore) Iterate(fn func(chunk.Address, *forky.Meta) (stop bool, err error)) (err error) {
+	return s.db.View(func(tx *bolt.Tx) (err error) {
+		b := tx.Bucket(bucketNameChunkMeta)
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) (err error) {
+			m := new(forky.Meta)
+			if err := m.UnmarshalBinary(v); err != nil {
+				return err
+			}
+			stop, err := fn(chunk.Address(k), m)
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+			return nil
+		})
+	})
+}
+
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
 }
