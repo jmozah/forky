@@ -64,6 +64,16 @@ func (s *LevelDBStore) Delete(addr chunk.Address) (err error) {
 	return s.db.Delete(addr, nil)
 }
 
+func (s *LevelDBStore) Count() (count int, err error) {
+	it := s.db.NewIterator(nil, nil)
+	defer it.Release()
+
+	for ok := it.First(); ok; ok = it.Next() {
+		count++
+	}
+	return count, nil
+}
+
 func (s *LevelDBStore) Close() error {
 	return s.db.Close()
 }

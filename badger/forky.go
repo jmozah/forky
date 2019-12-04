@@ -103,6 +103,16 @@ func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	})
 }
 
+func (s *MetaStore) Count() (count int, err error) {
+	err = s.db.View(func(txn *badger.Txn) (err error) {
+		i := txn.NewIterator(badger.IteratorOptions{})
+		defer i.Close()
+		count++
+		return nil
+	})
+	return count, err
+}
+
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
 }

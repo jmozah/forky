@@ -93,6 +93,16 @@ func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	return s.db.Write(batch, nil)
 }
 
+func (s *MetaStore) Count() (count int, err error) {
+	it := s.db.NewIterator(nil, nil)
+	defer it.Release()
+
+	for ok := it.First(); ok; ok = it.Next() {
+		count++
+	}
+	return count, nil
+}
+
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
 }

@@ -151,7 +151,7 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 	t.Run("write", func(t *testing.T) {
 		sem := make(chan struct{}, *concurrencyFlag)
 		var wg sync.WaitGroup
-
+		var wantCount int
 		wg.Add(o.ChunkCount)
 		for i, ch := range chunks {
 			sem <- struct{}{}
@@ -170,10 +170,20 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 						panic(err)
 					}
 					deletedChunks.Store(string(ch.Address()), nil)
+				} else {
+					wantCount++
 				}
 			}(i, ch)
 		}
 		wg.Wait()
+
+		gotCount, err := db.Count()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err != nil {
+			t.Fatalf("got %v count, want %v count", gotCount, wantCount)
+		}
 	})
 
 	rand.Shuffle(o.ChunkCount, func(i, j int) {

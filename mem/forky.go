@@ -85,6 +85,13 @@ func (s *MetaStore) FreeOffset(shard uint8) (offset int64, err error) {
 	return -1, nil
 }
 
+func (s *MetaStore) Count() (count int, err error) {
+	s.mu.RLock()
+	count = len(s.meta)
+	s.mu.RUnlock()
+	return count, nil
+}
+
 func (s *MetaStore) Close() (err error) {
 	return nil
 }

@@ -108,6 +108,18 @@ func (s *MetaStore) Remove(addr chunk.Address, shard uint8) (err error) {
 	})
 }
 
+func (s *MetaStore) Count() (count int, err error) {
+	err = s.db.View(func(tx *bolt.Tx) (err error) {
+		b := tx.Bucket(bucketNameChunkMeta)
+		if b == nil {
+			return nil
+		}
+		count = b.Stats().KeyN
+		return nil
+	})
+	return count, err
+}
+
 func (s *MetaStore) Close() (err error) {
 	return s.db.Close()
 }

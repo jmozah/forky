@@ -34,6 +34,7 @@ type Interface interface {
 	Has(addr chunk.Address) (yes bool, err error)
 	Put(ch chunk.Chunk) (err error)
 	Delete(addr chunk.Address) (err error)
+	Count() (count int, err error)
 	Close() (err error)
 }
 
@@ -241,6 +242,10 @@ func (s *Store) Delete(addr chunk.Address) (err error) {
 	return s.meta.Remove(addr, shard)
 }
 
+func (s *Store) Count() (count int, err error) {
+	return s.meta.Count()
+}
+
 func (s *Store) Close() (err error) {
 	s.quitOnce.Do(func() {
 		close(s.quit)
@@ -299,6 +304,7 @@ type MetaStore interface {
 	Get(addr chunk.Address) (*Meta, error)
 	Set(addr chunk.Address, shard uint8, reclaimed bool, m *Meta) error
 	Remove(addr chunk.Address, shard uint8) error
+	Count() (int, error)
 	FreeOffset(shard uint8) (int64, error)
 	Close() error
 }
