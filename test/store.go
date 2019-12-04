@@ -257,7 +257,7 @@ func NewForkyStore(t *testing.T, path string, metaStore forky.MetaStore) (s *for
 		t.Fatal(err)
 	}
 
-	s, err = forky.NewStore(path, metaStore, *noCacheFlag)
+	s, err = forky.NewStore(path, chunk.DefaultSize, metaStore, *noCacheFlag)
 	if err != nil {
 		os.RemoveAll(path)
 		t.Fatal(err)

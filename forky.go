@@ -46,19 +46,20 @@ var ErrDBClosed = errors.New("closed database")
 var _ Interface = new(Store)
 
 type Store struct {
-	shards    map[uint8]*os.File
-	shardsMu  map[uint8]*sync.Mutex
-	meta      MetaStore
-	free      map[uint8]struct{}
-	freeMu    sync.RWMutex
-	metaCache *metaCache
-	freeCache *offsetCache
-	wg        sync.WaitGroup
-	quit      chan struct{}
-	quitOnce  sync.Once
+	shards       map[uint8]*os.File
+	shardsMu     map[uint8]*sync.Mutex
+	meta         MetaStore
+	free         map[uint8]struct{}
+	freeMu       sync.RWMutex
+	metaCache    *metaCache
+	freeCache    *offsetCache
+	wg           sync.WaitGroup
+	maxChunkSize int
+	quit         chan struct{}
+	quitOnce     sync.Once
 }
 
-func NewStore(path string, metaStore MetaStore, noCache bool) (s *Store, err error) {
+func NewStore(path string, maxChunkSize int, metaStore MetaStore, noCache bool) (s *Store, err error) {
 	shards := make(map[byte]*os.File, shardCount)
 	shardsMu := make(map[uint8]*sync.Mutex)
 	for i := byte(0); i < shardCount; i++ {
@@ -77,13 +78,14 @@ func NewStore(path string, metaStore MetaStore, noCache bool) (s *Store, err err
 		freeCache = newOffsetCache(shardCount)
 	}
 	return &Store{
-		shards:    shards,
-		shardsMu:  shardsMu,
-		meta:      metaStore,
-		metaCache: metaCache,
-		freeCache: freeCache,
-		free:      make(map[uint8]struct{}),
-		quit:      make(chan struct{}),
+		shards:       shards,
+		shardsMu:     shardsMu,
+		meta:         metaStore,
+		metaCache:    metaCache,
+		freeCache:    freeCache,
+		free:         make(map[uint8]struct{}),
+		maxChunkSize: maxChunkSize,
+		quit:         make(chan struct{}),
 	}, nil
 }
 
@@ -148,7 +150,7 @@ func (s *Store) Put(ch chunk.Chunk) (err error) {
 	shard := getShard(addr)
 	f := s.shards[shard]
 	data := ch.Data()
-	section := make([]byte, chunk.DefaultSize)
+	section := make([]byte, s.maxChunkSize)
 	copy(section, data)
 
 	s.freeMu.RLock()
