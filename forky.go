@@ -103,9 +103,12 @@ func (s *Store) Get(addr chunk.Address) (ch chunk.Chunk, err error) {
 		return nil, err
 	}
 	data := make([]byte, m.Size)
-	_, err = s.shards[getShard(addr)].ReadAt(data, m.Offset)
-	if err != nil {
+	n, err := s.shards[getShard(addr)].ReadAt(data, m.Offset)
+	if err != nil && err != io.EOF {
 		return nil, err
+	}
+	if n != int(m.Size) {
+		return nil, fmt.Errorf("incomplete chunk data, read %v of %v", n, m.Size)
 	}
 	return chunk.NewChunk(addr, data), nil
 }
