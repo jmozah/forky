@@ -147,11 +147,10 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 	})
 
 	var deletedChunks sync.Map
-
+	var wantCount int
 	t.Run("write", func(t *testing.T) {
 		sem := make(chan struct{}, *concurrencyFlag)
 		var wg sync.WaitGroup
-		var wantCount int
 		var wantCountMu sync.Mutex
 		wg.Add(o.ChunkCount)
 		for i, ch := range chunks {
@@ -187,26 +186,28 @@ func TestStore(t *testing.T, o *TestStoreOptions) {
 		if gotCount != wantCount {
 			t.Fatalf("got %v count, want %v", gotCount, wantCount)
 		}
-
-		var iteratedCount int
-		if err := db.Iterate(func(ch chunk.Chunk) (stop bool, err error) {
-			for _, c := range chunks {
-				if bytes.Equal(c.Address(), ch.Address()) {
-					if !bytes.Equal(c.Data(), ch.Data()) {
-						t.Fatalf("invalid data in iterator for key %s", c.Address())
-					}
-					iteratedCount++
-					return false, nil
-				}
-			}
-			return false, nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if iteratedCount != wantCount {
-			t.Fatalf("iterated on %v chunks, want %v", iteratedCount, wantCount)
-		}
 	})
+
+	//t.Run("iterate", func(t *testing.T) {
+	//	var iteratedCount int
+	//	if err := db.Iterate(func(ch chunk.Chunk) (stop bool, err error) {
+	//		for _, c := range chunks {
+	//			if bytes.Equal(c.Address(), ch.Address()) {
+	//				if !bytes.Equal(c.Data(), ch.Data()) {
+	//					t.Fatalf("invalid data in iterator for key %s", c.Address())
+	//				}
+	//				iteratedCount++
+	//				return false, nil
+	//			}
+	//		}
+	//		return false, nil
+	//	}); err != nil {
+	//		t.Fatal(err)
+	//	}
+	//	if iteratedCount != wantCount {
+	//		t.Fatalf("iterated on %v chunks, want %v", iteratedCount, wantCount)
+	//	}
+	//})
 
 	rand.Shuffle(o.ChunkCount, func(i, j int) {
 		chunks[i], chunks[j] = chunks[j], chunks[i]
