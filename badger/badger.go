@@ -30,7 +30,14 @@ type BadgerStore struct {
 }
 
 func NewBadgerStore(path string) (s *BadgerStore, err error) {
-	o := badger.DefaultOptions(path).WithSyncWrites(false).WithCompression(options.None)
+	o := badger.DefaultOptions(path)
+	o.SyncWrites = false
+	o.ValueLogMaxEntries = 50000
+	o.Compression = options.None
+	o.KeepL0InMemory = true
+	o.NumMemtables =  10
+	//o.MaxCacheSize = o.MaxCacheSize * 4
+	//o.EventLogging = false
 	o.Logger = nil
 	db, err := badger.Open(o)
 	if err != nil {
@@ -89,19 +96,14 @@ func (s *BadgerStore) Delete(addr chunk.Address) (err error) {
 
 func (s *BadgerStore) Count() (count int, err error) {
 	err = s.db.View(func(txn *badger.Txn) (err error) {
-		i := txn.NewIterator(badger.IteratorOptions{})
+		o := badger.DefaultIteratorOptions
+		o.PrefetchValues = false
+		i := txn.NewIterator(o)
 		defer i.Close()
 		for i.Rewind(); i.Valid(); i.Next() {
 			item := i.Item()
-			k := item.Key()
-			if len(k) < 1 {
-				continue
-			}
-			v, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			if len(v) == 0 {
+			k := item.KeySize()
+			if k < 1 {
 				continue
 			}
 			count++
@@ -113,7 +115,10 @@ func (s *BadgerStore) Count() (count int, err error) {
 
 func (s *BadgerStore) Iterate(fn func(chunk.Chunk) (stop bool, err error)) (err error) {
 	return s.db.View(func(txn *badger.Txn) (err error) {
-		i := txn.NewIterator(badger.IteratorOptions{})
+		o := badger.DefaultIteratorOptions
+		o.PrefetchValues = true
+		o.PrefetchSize = 1024
+		i := txn.NewIterator(o)
 		defer i.Close()
 		for i.Rewind(); i.Valid(); i.Next() {
 			item := i.Item()
@@ -127,10 +132,6 @@ func (s *BadgerStore) Iterate(fn func(chunk.Chunk) (stop bool, err error)) (err 
 			}
 			if len(v) == 0 {
 				continue
-			}
-			m := new(forky.Meta)
-			if err := m.UnmarshalBinary(v); err != nil {
-				return err
 			}
 			stop, err := fn(chunk.NewChunk(k,v))
 			if err != nil {
